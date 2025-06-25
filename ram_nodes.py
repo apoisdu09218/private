@@ -70,7 +70,11 @@ class PreviewImageInRAM:
             i = 255. * image_tensor.cpu().numpy()
             img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
             buffer = io.BytesIO()
-            img.save(buffer, format="PNG", compress_level=4)
+            img.save(buffer, 
+                     format="webp",
+                     lossless=True,
+                     quality=100,
+                     method=6)
             image_data_bytes = buffer.getvalue()
             obfuscated_data = xor_cipher(image_data_bytes, key)
             img_base64 = base64.b64encode(obfuscated_data).decode('utf-8')
@@ -146,8 +150,8 @@ class PreviewAnimationAsWebP:
             append_images=pil_images[1:],
             duration=int(1000 / fps),  # Duration per frame in milliseconds
             loop=0,  # 0 for infinite loop
-            lossless=True,
-            quality=100,  # For lossless, PIL uses quality as compression effort (0-100, 100 best)
+            lossless=False,
+            quality=90,  # For lossless, PIL uses quality as compression effort (0-100, 100 best)
             method=6  # Compression method (0-6, 6 slowest/best compression for lossless)
         )
         webp_bytes = buffer.getvalue()
