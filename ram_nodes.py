@@ -72,13 +72,13 @@ class PreviewImageInRAM:
             buffer = io.BytesIO()
             img.save(buffer, 
                      format="webp",
-                     lossless=True,
-                     quality=100,
+                     lossless=False,
+                     quality=90,
                      method=6)
             image_data_bytes = buffer.getvalue()
             obfuscated_data = xor_cipher(image_data_bytes, key)
             img_base64 = base64.b64encode(obfuscated_data).decode('utf-8')
-            results.append({"base64": img_base64, "format": "png", "type": "image"})  # Added type for JS
+            results.append({"base64": img_base64, "format": "webp", "type": "image"})  # Added type for JS
         return {"ui": {"previews": results}}  # Changed key to 'previews' for clarity
 
 
