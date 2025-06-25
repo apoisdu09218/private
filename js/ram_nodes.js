@@ -2,7 +2,19 @@ import { app } from "../../../scripts/app.js";
 import { api } from "../../../scripts/api.js";
 
 // --- Helper functions (unchanged) ---
-function xorCipher(data, key) { const keyLength = key.length; return data.map((byte, i) => byte ^ key[i % keyLength]); }
+// --- Helper functions (Optimized) ---
+function xorCipher(data, key) {
+    const keyLength = key.length;
+    // Create a new Uint8Array of the same size to hold the output.
+    // This is much more memory-efficient than .map for large arrays.
+    const output = new Uint8Array(data.length);
+
+    // Use a standard for-loop, which is typically the fastest way to iterate.
+    for (let i = 0; i < data.length; i++) {
+        output[i] = data[i] ^ key[i % keyLength];
+    }
+    return output;
+}
 function hexToUint8Array(hexString) { return new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16))); }
 function uint8ArrayToBase64(bytes) { let binary = ''; for (let i = 0; i < bytes.length; i++) { binary += String.fromCharCode(bytes[i]); } return window.btoa(binary); }
 function base64ToUint8Array(base64) { const binary_string = window.atob(base64); const len = binary_string.length; const bytes = new Uint8Array(len); for (let i = 0; i < len; i++) { bytes[i] = binary_string.charCodeAt(i); } return bytes; }
