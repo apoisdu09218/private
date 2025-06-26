@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-from PIL import Image, ImageOps  # PIL is essential for WebP creation
+from PIL import Image, ImageOps
 import base64
 import io
 from itertools import cycle
@@ -70,19 +70,15 @@ class PreviewImageInRAM:
             i = 255. * image_tensor.cpu().numpy()
             img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
             buffer = io.BytesIO()
-            img.save(buffer, 
-                     format="webp",
-                     lossless=False,
-                     quality=90,
-                     method=6)
+            img.save(buffer, format="WEBP", lossless=False, quality=95, method=4)
             image_data_bytes = buffer.getvalue()
             obfuscated_data = xor_cipher(image_data_bytes, key)
             img_base64 = base64.b64encode(obfuscated_data).decode('utf-8')
-            results.append({"base64": img_base64, "format": "webp", "type": "image"})  # Added type for JS
-        return {"ui": {"previews": results}}  # Changed key to 'previews' for clarity
+            results.append({"base64": img_base64, "format": "webp", "type": "image"})
+        return {"ui": {"previews": results}}
 
 
-# --- PreviewVideoInRAM class (unchanged, but kept for completeness if you use it) ---
+# --- PreviewVideoInRAM class (unchanged) ---
 class PreviewVideoInRAM:
     @classmethod
     def INPUT_TYPES(s):
@@ -102,17 +98,17 @@ class PreviewVideoInRAM:
         video_bytes = video_data
         encrypted_video_bytes = xor_cipher(video_bytes, key)
         video_base64 = base64.b64encode(encrypted_video_bytes).decode('utf-8')
-        results = [{"base64": video_base64, "mime_type": mime_type, "type": "video"}]  # Added type for JS
-        return {"ui": {"previews": results}}  # Changed key to 'previews'
+        results = [{"base64": video_base64, "mime_type": mime_type, "type": "video"}]
+        return {"ui": {"previews": results}}
 
 
-# +++ NEW CLASS: PreviewAnimationAsWebP +++
+# --- PreviewAnimationAsWebP class (unchanged) ---
 class PreviewAnimationAsWebP:
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                "images": ("IMAGE",),  # Batch of image tensors
+                "images": ("IMAGE",),
                 "fps": ("FLOAT", {"default": 10.0, "min": 0.1, "max": 60.0, "step": 0.1}),
                 "client_id": ("STRING", {"multiline": False, "default": ""}),
             }
@@ -121,48 +117,62 @@ class PreviewAnimationAsWebP:
     RETURN_TYPES = ()
     FUNCTION = "preview_animation"
     OUTPUT_NODE = True
-    CATEGORY = "image"  # Or "animation" if you prefer
+    CATEGORY = "image"
 
     def preview_animation(self, images, fps, client_id=None):
+        if not client_id: raise Exception("The 'client_id' field on the PreviewAnimationAsWebP node cannot be empty.")
+        if images is None or len(images) == 0: return {"ui": {"previews": []}}
+        key = get_session_key(client_id)
+        if not key: raise Exception(f"Could not find session key for client_id: {client_id}. Please refresh the page.")
+        pil_images = [Image.fromarray(np.clip(255. * i.cpu().numpy(), 0, 255).astype(np.uint8)).convert("RGB") for i in images]
+        if not pil_images: return {"ui": {"previews": []}}
+        buffer = io.BytesIO()
+        pil_images[0].save(buffer, format="WEBP", save_all=True, append_images=pil_images[1:], duration=int(1000 / fps), loop=0, lossless=False, quality=95, method=4)
+        webp_bytes = buffer.getvalue()
+        encrypted_webp_bytes = xor_cipher(webp_bytes, key)
+        webp_base64 = base64.b64encode(encrypted_webp_bytes).decode('utf-8')
+        results = [{"base64": webp_base64, "format": "webp", "type": "image"}]
+        return {"ui": {"previews": results}}
+
+
+# +++ NEW CLASS: EncryptedText +++
+class EncryptedText:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                # This will be hidden on the client, but it's what the server receives
+                "encrypted_text": ("STRING", {"multiline": True, "default": ""}),
+                # This will also be hidden and auto-filled by the frontend
+                "client_id": ("STRING", {"multiline": False, "default": ""}),
+            }
+        }
+
+    CATEGORY = "text"
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("text",)
+    FUNCTION = "decrypt_text"
+
+    def decrypt_text(self, encrypted_text, client_id):
+        if not encrypted_text:
+            return ("",)
         if not client_id:
-            raise Exception("The 'client_id' field on the PreviewAnimationAsWebP node cannot be empty.")
-        if images is None or len(images) == 0:
-            return {"ui": {"previews": []}}
+            raise Exception("The 'client_id' field on the EncryptedText node cannot be empty.")
 
         key = get_session_key(client_id)
         if not key:
             raise Exception(f"Could not find session key for client_id: {client_id}. Please refresh the page.")
 
-        pil_images = []
-        for image_tensor in images:
-            i = 255. * image_tensor.cpu().numpy()
-            img = Image.fromarray(np.clip(i, 0, 255).astype(np.uint8))
-            pil_images.append(img.convert("RGB"))  # Ensure RGB for WebP
+        # Decode from base64, then decrypt with XOR
+        encrypted_data_bytes = base64.b64decode(encrypted_text)
+        decrypted_bytes = xor_cipher(encrypted_data_bytes, key)
 
-        if not pil_images:
-            return {"ui": {"previews": []}}
+        # Decode the decrypted bytes back to a UTF-8 string
+        decrypted_string = decrypted_bytes.decode('utf-8')
 
-        buffer = io.BytesIO()
-        pil_images[0].save(
-            buffer,
-            format="WEBP",
-            save_all=True,
-            append_images=pil_images[1:],
-            duration=int(1000 / fps),  # Duration per frame in milliseconds
-            loop=0,  # 0 for infinite loop
-            lossless=False,
-            quality=90,  # For lossless, PIL uses quality as compression effort (0-100, 100 best)
-            method=6  # Compression method (0-6, 6 slowest/best compression for lossless)
-        )
-        webp_bytes = buffer.getvalue()
+        return (decrypted_string,)
 
-        encrypted_webp_bytes = xor_cipher(webp_bytes, key)
-        webp_base64 = base64.b64encode(encrypted_webp_bytes).decode('utf-8')
-
-        results = [{
-            "base64": webp_base64,
-            "format": "webp",  # Specifically image/webp
-            "type": "image"  # Still an image type for the <img> tag
-        }]
-
-        return {"ui": {"previews": results}}
+    @classmethod
+    def IS_CHANGED(s, encrypted_text, client_id):
+        # A simple way to check for changes for caching
+        return hashlib.sha256((encrypted_text + client_id).encode()).hexdigest()
